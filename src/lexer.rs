@@ -1,8 +1,11 @@
+use std::num::NonZeroUsize;
+
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_while, take_while1},
-    combinator::map_res,
-    multi::many0,
+    bytes::complete::{tag, take_till, take_while, take_while1},
+    character::complete::none_of,
+    combinator::{cut, map_res},
+    multi::{fold_many0, many0},
     sequence::{delimited, pair},
     Parser,
 };
@@ -13,9 +16,16 @@ pub enum Keyword {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum BinaryOp {
+pub enum SpecialSymbol {
     Assign,
     Plus,
+    Minus,
+    Colon,
+    Comma,
+    Star,
+    Slash,
+    Semicolon,
+    Dot,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -40,21 +50,22 @@ pub struct Token<'a> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     Keyword(Keyword),
-    BinaryOp(BinaryOp),
+    SpecialSymbol(SpecialSymbol),
     Identifier,
     Number,
-}
-
-fn spaces(input: &str) -> nom::IResult<&str, &str> {
-    take_while(|c: char| c.is_whitespace()).parse(input)
+    StringLiteral,
 }
 
 pub fn tokenize(input: &str) -> nom::IResult<&str, Vec<Token>> {
-    let tokens = alt((keyword, identifier, binaryop, number));
+    let tokens = alt((keyword, identifier, special_symbol, number, string_literal));
 
     let token_with_spaces = delimited(spaces, tokens, spaces);
     let mut tokens = many0(token_with_spaces);
     tokens(input)
+}
+
+fn spaces(input: &str) -> nom::IResult<&str, &str> {
+    take_while(|c: char| c.is_whitespace()).parse(input)
 }
 
 fn keyword(input: &str) -> nom::IResult<&str, Token> {
@@ -78,12 +89,12 @@ unsafe fn concat_unchecked<'a>(lhs: &'a str, rhs: &'a str) -> &'a str {
 fn identifier(input: &str) -> nom::IResult<&str, Token> {
     let prefixed_ident = pair(
         tag("_"),
-        take_while(|x: char| x.is_alphanumeric() || x == '_'),
+        cut(take_while(|x: char| x.is_alphanumeric() || x == '_')),
     );
 
     let ident = pair(
         take_while1(|x: char| x.is_alphabetic()),
-        take_while(|x: char| x.is_alphanumeric() || x == '_'),
+        cut(take_while(|x: char| x.is_alphanumeric() || x == '_')),
     );
 
     alt((prefixed_ident, ident))
@@ -94,16 +105,38 @@ fn identifier(input: &str) -> nom::IResult<&str, Token> {
         .parse(input)
 }
 
-fn binaryop(input: &str) -> nom::IResult<&str, Token> {
-    let plus = tag("+").map(|_: &str| BinaryOp::Plus);
-    let assign = tag("=").map(|_: &str| BinaryOp::Assign);
+fn special_symbol(input: &str) -> nom::IResult<&str, Token> {
+    let mut chars = input.chars();
+    let ch = chars.next();
+    let rest = chars.as_str();
 
-    alt((plus, assign))
-        .map(|op| Token {
-            kind: TokenKind::BinaryOp(op),
+    let ch = ch.unwrap_or('\0');
+
+    let symbol = match ch {
+        '+' => SpecialSymbol::Plus,
+        '-' => SpecialSymbol::Minus,
+        '=' => SpecialSymbol::Assign,
+        '*' => SpecialSymbol::Star,
+        '/' => SpecialSymbol::Slash,
+        ':' => SpecialSymbol::Colon,
+        ',' => SpecialSymbol::Comma,
+        ';' => SpecialSymbol::Semicolon,
+        '.' => SpecialSymbol::Dot,
+        _ => {
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::OneOf,
+            )))
+        }
+    };
+
+    Ok((
+        rest,
+        Token {
+            kind: TokenKind::SpecialSymbol(symbol),
             value: TokenValue::None,
-        })
-        .parse(input)
+        },
+    ))
 }
 
 fn integer(input: &str) -> nom::IResult<&str, Token> {
@@ -125,6 +158,31 @@ fn number(input: &str) -> nom::IResult<&str, Token> {
     alt((integer, double)).parse(input)
 }
 
+fn string_literal(input: &str) -> nom::IResult<&str, Token> {
+    let string_payload = fold_many0(
+        alt((
+            tag(r#"\""#),                                               // try eagerly consume \"
+            tag(r#"\"#), // if failed, try to consume \
+            take_while1(|c: char| c != '\n' && c != '\"' && c != '\\'), // consume any other characters except newline
+        )),
+        || "",
+        |acc: &str, item: &str| {
+            if acc.is_empty() {
+                item
+            } else {
+                unsafe { concat_unchecked(acc, item) }
+            }
+        },
+    );
+
+    delimited(tag("\""), string_payload, tag("\""))
+        .map(|s: &str| Token {
+            kind: TokenKind::StringLiteral,
+            value: TokenValue::String(s),
+        })
+        .parse(input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,11 +201,20 @@ mod tests {
         let script = r#"
           var sdfвввввsdsd    = 12345
           var ___ass_ = abcd
+          var s = "  11 11 \" "
         "#;
 
         let (rest, parsed) = tokenize(script).expect("valid");
 
         println!("{parsed:?}");
+        assert_eq!(rest, "");
+    }
+
+    #[test]
+    fn test_parse_string_literal() {
+        let s = r#"" \' \' 11 11 \" ""#;
+        let (rest, token) = string_literal(s).expect("parsed");
+        println!("{token:?}");
         assert_eq!(rest, "");
     }
 }
