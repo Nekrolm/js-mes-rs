@@ -1,12 +1,9 @@
-use std::num::NonZeroUsize;
-
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_till, take_while, take_while1},
-    character::complete::none_of,
+    bytes::complete::{tag, take_while, take_while1},
     combinator::{cut, map_res},
-    multi::{fold_many0, many0},
-    sequence::{delimited, pair},
+    multi::{fold_many0},
+    sequence::{delimited, pair, preceded},
     Parser,
 };
 
@@ -26,6 +23,8 @@ pub enum SpecialSymbol {
     Slash,
     Semicolon,
     Dot,
+    LeftParen,
+    RightParen,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -43,24 +42,29 @@ pub enum TokenValue<'a> {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Token<'a> {
-    kind: TokenKind,
-    value: TokenValue<'a>,
+    pub kind: TokenKind,
+    pub value: TokenValue<'a>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenKind {
+    Comment,
     Keyword(Keyword),
     SpecialSymbol(SpecialSymbol),
     Identifier,
-    Number,
-    StringLiteral,
+    Literal,
 }
 
 pub fn tokenize(input: &str) -> nom::IResult<&str, Vec<Token>> {
-    let tokens = alt((keyword, identifier, special_symbol, number, string_literal));
+    let tokens = alt((keyword, identifier, comment, special_symbol, number, string_literal));
 
     let token_with_spaces = delimited(spaces, tokens, spaces);
-    let mut tokens = many0(token_with_spaces);
+    let mut tokens = fold_many0(token_with_spaces, Vec::default, |mut acc, token| {
+        if token.kind != TokenKind::Comment {
+            acc.push(token)
+        }
+        acc
+    });
     tokens(input)
 }
 
@@ -122,6 +126,8 @@ fn special_symbol(input: &str) -> nom::IResult<&str, Token> {
         ',' => SpecialSymbol::Comma,
         ';' => SpecialSymbol::Semicolon,
         '.' => SpecialSymbol::Dot,
+        '(' => SpecialSymbol::LeftParen,
+        ')' => SpecialSymbol::RightParen,
         _ => {
             return Err(nom::Err::Error(nom::error::Error::new(
                 input,
@@ -143,7 +149,7 @@ fn integer(input: &str) -> nom::IResult<&str, Token> {
     let digits = take_while(|x: char| x.is_ascii_digit());
     map_res(digits, |digits: &str| digits.parse::<u64>())
         .map(|int: u64| Token {
-            kind: TokenKind::Number,
+            kind: TokenKind::Literal,
             value: TokenValue::Number(NumberValue::Integer(int)),
         })
         .parse(input)
@@ -151,7 +157,7 @@ fn integer(input: &str) -> nom::IResult<&str, Token> {
 
 fn number(input: &str) -> nom::IResult<&str, Token> {
     let double = nom::number::complete::double.map(|val| Token {
-        kind: TokenKind::Number,
+        kind: TokenKind::Literal,
         value: TokenValue::Number(NumberValue::Double(val)),
     });
 
@@ -177,8 +183,17 @@ fn string_literal(input: &str) -> nom::IResult<&str, Token> {
 
     delimited(tag("\""), string_payload, tag("\""))
         .map(|s: &str| Token {
-            kind: TokenKind::StringLiteral,
+            kind: TokenKind::Literal,
             value: TokenValue::String(s),
+        })
+        .parse(input)
+}
+
+fn comment(input: &str) -> nom::IResult<&str, Token> {
+    preceded(tag("//"), take_while(|x: char| x != '\n'))
+        .map(|comment: &str| Token {
+            kind: TokenKind::Comment,
+            value: TokenValue::String(comment),
         })
         .parse(input)
 }
@@ -201,7 +216,9 @@ mod tests {
         let script = r#"
           var sdfвввввsdsd    = 12345
           var ___ass_ = abcd
-          var s = "  11 11 \" "
+          var s = "  11 11 \" // this is not comment"
+          // comment
+               // another comment
         "#;
 
         let (rest, parsed) = tokenize(script).expect("valid");
