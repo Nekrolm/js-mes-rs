@@ -2,7 +2,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_while, take_while1},
     combinator::{cut, map_res},
-    multi::{fold_many0},
+    multi::fold_many0,
     sequence::{delimited, pair, preceded},
     Parser,
 };
@@ -10,6 +10,7 @@ use nom::{
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Keyword {
     Var,
+    Const,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -25,6 +26,14 @@ pub enum SpecialSymbol {
     Dot,
     LeftParen,
     RightParen,
+    Equals,
+    Greater,
+    Less,
+    GreaterOrEq,
+    LessOrEq,
+    LogicalAnd,
+    LogicalOr,
+    LogicalNot,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -56,7 +65,14 @@ pub enum TokenKind {
 }
 
 pub fn tokenize(input: &str) -> nom::IResult<&str, Vec<Token>> {
-    let tokens = alt((keyword, identifier, comment, special_symbol, number, string_literal));
+    let tokens = alt((
+        keyword,
+        identifier,
+        comment,
+        special_symbol,
+        number,
+        string_literal,
+    ));
 
     let token_with_spaces = delimited(spaces, tokens, spaces);
     let mut tokens = fold_many0(token_with_spaces, Vec::default, |mut acc, token| {
@@ -73,21 +89,15 @@ fn spaces(input: &str) -> nom::IResult<&str, &str> {
 }
 
 fn keyword(input: &str) -> nom::IResult<&str, Token> {
-    nom::bytes::complete::tag("var")
-        .map(|_: &str| Keyword::Var)
-        .map(|kv| Token {
-            kind: TokenKind::Keyword(kv),
-            value: TokenValue::None,
-        })
-        .parse(input)
-}
-
-unsafe fn concat_unchecked<'a>(lhs: &'a str, rhs: &'a str) -> &'a str {
-    assert!(lhs.as_ptr().add(lhs.len()) == rhs.as_ptr());
-    std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-        lhs.as_ptr(),
-        lhs.len() + rhs.len(),
+    alt((
+        tag("var").map(|_: &str| Keyword::Var),
+        tag("const").map(|_: &str| Keyword::Const),
     ))
+    .map(|kv| Token {
+        kind: TokenKind::Keyword(kv),
+        value: TokenValue::None,
+    })
+    .parse(input)
 }
 
 fn identifier(input: &str) -> nom::IResult<&str, Token> {
@@ -101,15 +111,20 @@ fn identifier(input: &str) -> nom::IResult<&str, Token> {
         cut(take_while(|x: char| x.is_alphanumeric() || x == '_')),
     );
 
-    alt((prefixed_ident, ident))
-        .map(|(ident_prefix, ident_suffix)| Token {
+    let (rest, ident_len) = alt((prefixed_ident, ident))
+        .map(|(ident_prefix, ident_suffix): (&str, &str)| ident_prefix.len() + ident_suffix.len())
+        .parse(input)?;
+
+    Ok((
+        rest,
+        Token {
             kind: TokenKind::Identifier,
-            value: TokenValue::String(unsafe { concat_unchecked(ident_prefix, ident_suffix) }),
-        })
-        .parse(input)
+            value: TokenValue::String(&input[..ident_len]),
+        },
+    ))
 }
 
-fn special_symbol(input: &str) -> nom::IResult<&str, Token> {
+fn single_special_symbol(input: &str) -> nom::IResult<&str, SpecialSymbol> {
     let mut chars = input.chars();
     let ch = chars.next();
     let rest = chars.as_str();
@@ -128,6 +143,9 @@ fn special_symbol(input: &str) -> nom::IResult<&str, Token> {
         '.' => SpecialSymbol::Dot,
         '(' => SpecialSymbol::LeftParen,
         ')' => SpecialSymbol::RightParen,
+        '>' => SpecialSymbol::Greater,
+        '<' => SpecialSymbol::Less,
+        '!' => SpecialSymbol::LogicalNot,
         _ => {
             return Err(nom::Err::Error(nom::error::Error::new(
                 input,
@@ -135,14 +153,23 @@ fn special_symbol(input: &str) -> nom::IResult<&str, Token> {
             )))
         }
     };
+    Ok((rest, symbol))
+}
 
-    Ok((
-        rest,
-        Token {
-            kind: TokenKind::SpecialSymbol(symbol),
-            value: TokenValue::None,
-        },
+fn special_symbol(input: &str) -> nom::IResult<&str, Token> {
+    alt((
+        tag("==").map(|_| SpecialSymbol::Equals),
+        tag(">=").map(|_| SpecialSymbol::GreaterOrEq),
+        tag("<=").map(|_| SpecialSymbol::LessOrEq),
+        tag("&&").map(|_| SpecialSymbol::LogicalAnd),
+        tag("||").map(|_| SpecialSymbol::LogicalOr),
+        single_special_symbol,
     ))
+    .map(|symbol| Token {
+        kind: TokenKind::SpecialSymbol(symbol),
+        value: TokenValue::None,
+    })
+    .parse(input)
 }
 
 fn integer(input: &str) -> nom::IResult<&str, Token> {
@@ -164,23 +191,21 @@ fn number(input: &str) -> nom::IResult<&str, Token> {
     alt((integer, double)).parse(input)
 }
 
-fn string_literal(input: &str) -> nom::IResult<&str, Token> {
-    let string_payload = fold_many0(
+fn string_payload(input: &str) -> nom::IResult<&str, &str> {
+    let (rest, string_len) = fold_many0(
         alt((
             tag(r#"\""#),                                               // try eagerly consume \"
             tag(r#"\"#), // if failed, try to consume \
             take_while1(|c: char| c != '\n' && c != '\"' && c != '\\'), // consume any other characters except newline
         )),
-        || "",
-        |acc: &str, item: &str| {
-            if acc.is_empty() {
-                item
-            } else {
-                unsafe { concat_unchecked(acc, item) }
-            }
-        },
-    );
+        || 0,
+        |acc: usize, item: &str| acc + item.len(),
+    )
+    .parse(input)?;
+    Ok((rest, &input[..string_len]))
+}
 
+fn string_literal(input: &str) -> nom::IResult<&str, Token> {
     delimited(tag("\""), string_payload, tag("\""))
         .map(|s: &str| Token {
             kind: TokenKind::Literal,
