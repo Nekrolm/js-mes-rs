@@ -6,11 +6,11 @@ use nom::sequence::delimited;
 use nom::sequence::pair;
 use nom::Parser;
 
+use crate::lexer::NumberValue;
 use crate::lexer::SpecialSymbol;
 use crate::lexer::Token;
 use crate::lexer::TokenKind;
 use crate::lexer::TokenValue;
-use crate::lexer::NumberValue;
 
 use super::ast;
 
@@ -22,7 +22,6 @@ use crate::parser::take_one_matches;
 // subexpression = UnaryOp GeneralFactor | ( Expression ) | Terminal
 // Termial = Ident | Literal
 
-
 #[derive(Debug, Clone)]
 pub enum Expression<'a> {
     Identifier(&'a str),
@@ -31,19 +30,17 @@ pub enum Expression<'a> {
     UnaryExpression(Rc<UnaryExpression<'a>>),
 }
 
-
 #[derive(Debug, Clone, Copy)]
 pub enum LiteralExpression<'a> {
     StringLiteral(&'a str),
     Number(NumberValue),
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOperation {
     Minus,
     Plus,
-    LogicalNot,  
+    LogicalNot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,9 +61,8 @@ pub enum BinaryOperation {
 #[derive(Debug)]
 pub struct UnaryExpression<'a> {
     pub unary_operation: UnaryOperation,
-    pub expression: Expression<'a>
+    pub expression: Expression<'a>,
 }
-
 
 #[derive(Debug)]
 pub struct BinaryExpression<'a> {
@@ -74,7 +70,6 @@ pub struct BinaryExpression<'a> {
     pub operation: BinaryOperation,
     pub right: Expression<'a>,
 }
-
 
 impl BinaryOperation {
     pub fn precedence(self) -> u32 {
@@ -89,12 +84,10 @@ impl BinaryOperation {
             Self::LessOrEq => 2,
             Self::GreaterOrEq => 2,
             Self::LogicalAnd => 1,
-            Self::LogicalOr => 0, 
+            Self::LogicalOr => 0,
         }
     }
 }
-
-
 
 fn terminal_expression<'tokens, 'a>(
     tokens: &'tokens [Token<'a>],
@@ -106,11 +99,9 @@ fn terminal_expression<'tokens, 'a>(
     .parse(tokens)
 }
 
-
 pub fn identifier_name<'tokens, 'a>(
     tokens: &'tokens [Token<'a>],
-) -> nom::IResult<&'tokens [Token<'a>], &'a str> 
-{
+) -> nom::IResult<&'tokens [Token<'a>], &'a str> {
     take_one_match_map(tokens, |token| match token.kind {
         TokenKind::Comment => unreachable!("comments are filtered out!"),
         TokenKind::Identifier => match token.value {
@@ -120,7 +111,7 @@ pub fn identifier_name<'tokens, 'a>(
         },
         _ => None,
     })
-} 
+}
 
 fn identifier_expression<'tokens, 'a>(
     tokens: &'tokens [Token<'a>],
@@ -196,7 +187,7 @@ fn binary_operation<'tokens, 'a>(
         // Logical
         TokenKind::SpecialSymbol(SpecialSymbol::LogicalAnd) => Some(BinaryOperation::LogicalAnd),
         TokenKind::SpecialSymbol(SpecialSymbol::LogicalOr) => Some(BinaryOperation::LogicalOr),
-        
+
         _ => None,
     })
 }
@@ -218,10 +209,16 @@ fn add_operation(stack_expression: &mut Vec<Expression>, operation: BinaryOperat
     Some(())
 }
 
+fn pop_if<T>(v: &mut Vec<T>, cond: impl FnOnce(&T) -> bool) -> Option<T> {
+    match v.last() {
+        Some(e) if cond(e) => v.pop(),
+        _ => None,
+    }
+}
+
 pub fn expression<'tokens, 'a>(
     tokens: &'tokens [Token<'a>],
 ) -> nom::IResult<&'tokens [Token<'a>], Expression<'a>> {
-  
     let (rest, left_term) = subexpression(tokens)?;
 
     let operations_stack = Vec::<BinaryOperation>::new();
@@ -234,14 +231,11 @@ pub fn expression<'tokens, 'a>(
         next_term,
         stack_init,
         |(mut expressions, mut operations), (next_operation, next_expr)| {
-            while let Some(op) = operations.pop() {
-                if op.precedence() >= next_operation.precedence() {
-                    add_operation(&mut expressions, op)
-                        .expect("At this point stack has at least 2 expressions")
-                } else {
-                    operations.push(op);
-                    break;
-                }
+            let current_precedence = next_operation.precedence();
+            while let Some(op) = pop_if(&mut operations, |op| op.precedence() >= current_precedence)
+            {
+                add_operation(&mut expressions, op)
+                    .expect("At this point stack has at least 2 expressions")
             }
             operations.push(next_operation);
             expressions.push(next_expr);
@@ -301,8 +295,6 @@ mod tests {
         dbg!(expr);
     }
 
-
-
     #[test]
     fn test_parse_expressions_with_comparison() {
         let expression_str = "a + 5 < b == c";
@@ -315,7 +307,6 @@ mod tests {
         dbg!(expr);
     }
 
-
     #[test]
     fn test_parse_expressions_with_logical_basic() {
         let expression_str = "a + 5 == b && c > 10";
@@ -327,7 +318,6 @@ mod tests {
         };
         dbg!(expr);
     }
-
 
     #[test]
     fn test_parse_expressions_with_logical_complex() {
