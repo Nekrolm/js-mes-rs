@@ -198,15 +198,22 @@ fn subexpression<'tokens, 'a>(
     alt((unary_expression, paren_expression, terminal_expression)).parse(tokens)
 }
 
-fn add_operation(stack_expression: &mut Vec<Expression>, operation: BinaryOperation) -> Option<()> {
-    let right = stack_expression.pop()?;
-    let left = stack_expression.pop()?;
+fn add_operation<'a>(
+    mut stack_expression: Vec<Expression<'a>>,
+    operation: BinaryOperation,
+) -> Vec<Expression<'a>> {
+    let right = stack_expression
+        .pop()
+        .expect("at least two expressions in stack");
+    let left = stack_expression
+        .pop()
+        .expect("at least two expressions in stack");
     stack_expression.push(Expression::BinaryExpression(Rc::new(BinaryExpression {
         left,
         operation,
         right,
     })));
-    Some(())
+    stack_expression
 }
 
 fn pop_if<T>(v: &mut Vec<T>, cond: impl FnOnce(&T) -> bool) -> Option<T> {
@@ -227,31 +234,29 @@ pub fn expression<'tokens, 'a>(
     let stack_init = move || stacks.clone();
 
     let next_term = pair(binary_operation, nom::combinator::cut(subexpression));
-    let (rest_tokens, (mut expressions, mut ops)) = fold_many0(
+
+    fold_many0(
         next_term,
         stack_init,
-        |(mut expressions, mut operations), (next_operation, next_expr)| {
+        |(expressions, mut operations), (next_operation, next_expr)| {
             let current_precedence = next_operation.precedence();
-            while let Some(op) = pop_if(&mut operations, |op| op.precedence() >= current_precedence)
-            {
-                add_operation(&mut expressions, op)
-                    .expect("At this point stack has at least 2 expressions")
-            }
-            operations.push(next_operation);
+            let mut expressions = std::iter::from_fn(|| {
+                pop_if(&mut operations, |op| op.precedence() >= current_precedence)
+            })
+            .fold(expressions, add_operation);
             expressions.push(next_expr);
+            operations.push(next_operation);
             (expressions, operations)
         },
     )
-    .parse(rest)?;
-
-    while let Some(op) = ops.pop() {
-        add_operation(&mut expressions, op).expect("At this point stack has at least 2 expressions")
-    }
-
-    let result = expressions
-        .pop()
-        .expect("At least one element in stack expected");
-    Ok((rest_tokens, result))
+    .map(|(expressions, ops)| {
+        ops.into_iter()
+            .rev()
+            .fold(expressions, add_operation)
+            .pop()
+            .expect("At least one element in stack expected")
+    })
+    .parse(rest)
 }
 
 #[cfg(test)]
