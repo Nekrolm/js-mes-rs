@@ -11,6 +11,8 @@ use nom::{
 pub enum Keyword {
     Var,
     Const,
+    If,
+    Else,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -34,6 +36,8 @@ pub enum SpecialSymbol {
     LogicalAnd,
     LogicalOr,
     LogicalNot,
+    LeftBracket,
+    RightBracket,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -92,6 +96,8 @@ fn keyword(input: &str) -> nom::IResult<&str, Token> {
     alt((
         tag("var").map(|_: &str| Keyword::Var),
         tag("const").map(|_: &str| Keyword::Const),
+        tag("if").map(|_: &str| Keyword::If),
+        tag("else").map(|_: &str| Keyword::Else),
     ))
     .map(|kv| Token {
         kind: TokenKind::Keyword(kv),
@@ -146,6 +152,8 @@ fn single_special_symbol(input: &str) -> nom::IResult<&str, SpecialSymbol> {
         '>' => SpecialSymbol::Greater,
         '<' => SpecialSymbol::Less,
         '!' => SpecialSymbol::LogicalNot,
+        '{' => SpecialSymbol::LeftBracket,
+        '}' => SpecialSymbol::RightBracket,
         _ => {
             return Err(nom::Err::Error(nom::error::Error::new(
                 input,
