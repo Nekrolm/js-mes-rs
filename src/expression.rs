@@ -12,8 +12,6 @@ use crate::lexer::Token;
 use crate::lexer::TokenKind;
 use crate::lexer::TokenValue;
 
-use super::ast;
-
 use crate::parser::take_one_match_map;
 use crate::parser::take_one_matches;
 
@@ -21,14 +19,17 @@ use crate::parser::take_one_matches;
 // ExprContinuation -> BinaryOp Subexpression ExprContinuation | None
 // subexpression = UnaryOp GeneralFactor | ( Expression ) | Terminal
 // Termial = Ident | Literal
-
 #[derive(Debug, Clone)]
 pub enum Expression<'a> {
-    Identifier(&'a str),
+    Identifier(Identifier<'a>),
     Literal(LiteralExpression<'a>),
     BinaryExpression(Rc<BinaryExpression<'a>>),
     UnaryExpression(Rc<UnaryExpression<'a>>),
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Identifier<'a>(&'a str);
+
 
 #[derive(Debug, Clone, Copy)]
 pub enum LiteralExpression<'a> {
@@ -101,11 +102,11 @@ fn terminal_expression<'tokens, 'a>(
 
 pub fn identifier_name<'tokens, 'a>(
     tokens: &'tokens [Token<'a>],
-) -> nom::IResult<&'tokens [Token<'a>], &'a str> {
+) -> nom::IResult<&'tokens [Token<'a>], Identifier<'a>> {
     take_one_match_map(tokens, |token| match token.kind {
         TokenKind::Comment => unreachable!("comments are filtered out!"),
         TokenKind::Identifier => match token.value {
-            TokenValue::String(string) => Some(string),
+            TokenValue::String(string) => Some(Identifier(string)),
             TokenValue::None => unreachable!("literal cannot be empty"),
             TokenValue::Number(_) => unreachable!("Identifier cannot a number"),
         },

@@ -1,10 +1,10 @@
 use nom::combinator::{cut, opt};
-use nom::multi::{many0_count, many1_count};
+use nom::multi::many0_count;
 use nom::sequence::{delimited, preceded, separated_pair, terminated};
 use nom::Parser;
 use nom::{branch::alt, multi::many0};
 
-use crate::expression::{expression, identifier_name};
+use crate::expression::{expression, identifier_name, Identifier};
 use crate::lexer::{Keyword, SpecialSymbol, TokenKind};
 use crate::parser::{take_one_match_map, take_one_matches};
 use crate::{expression::Expression, lexer::Token};
@@ -30,7 +30,7 @@ pub struct VariableDeclaration<'a> {
 
 #[derive(Debug)]
 pub struct VariableAssignment<'a> {
-    pub var_name: &'a str,
+    pub var_name: Identifier<'a>,
     pub expression: Expression<'a>,
 }
 
@@ -149,7 +149,7 @@ fn block<'tokens, 'a>(
     delimited(left_bracket, program, right_bracket).parse(tokens)
 }
 
-fn program<'tokens, 'a>(
+pub fn program<'tokens, 'a: 'tokens>(
     tokens: &'tokens [Token<'a>],
 ) -> nom::IResult<&'tokens [Token<'a>], Vec<Statement<'a>>> {
     let start_semicolons = many0_count(semicolon);

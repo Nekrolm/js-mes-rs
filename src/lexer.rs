@@ -68,7 +68,7 @@ pub enum TokenKind {
     Literal,
 }
 
-pub fn tokenize(input: &str) -> nom::IResult<&str, Vec<Token>> {
+pub fn tokenize<'a>(input: &'a str) -> nom::IResult<&'a str, Vec<Token<'a>>> {
     let tokens = alt((
         keyword,
         identifier,
