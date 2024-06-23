@@ -14,6 +14,7 @@ pub enum Statement<'a> {
     VarDecl(VariableDeclaration<'a>),
     Assignment(VariableAssignment<'a>),
     If(If<'a>),
+    While(While<'a>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +47,15 @@ pub struct If<'a> {
     pub else_block: Vec<Statement<'a>>,
 }
 
+// while expression {
+//     statements
+//}
+#[derive(Debug)]
+pub struct While<'a> {
+    pub condition: Expression<'a>,
+    pub body: Vec<Statement<'a>>,
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Semicolon;
 
@@ -56,6 +66,7 @@ fn statement<'tokens, 'a>(
         variable_declaration.map(Statement::VarDecl),
         variable_assignment.map(Statement::Assignment),
         if_statement.map(Statement::If),
+        while_statement.map(Statement::While),
     ))
     .parse(tokens)
 }
@@ -126,6 +137,17 @@ fn if_statement<'tokens, 'a>(
             then_block,
             else_block,
         })
+        .parse(tokens)
+}
+
+fn while_statement<'tokens, 'a>(
+    tokens: &'tokens [Token<'a>],
+) -> nom::IResult<&'tokens [Token<'a>], While<'a>> {
+    let while_kv =
+        take_one_matches(|token| matches!(token.kind, TokenKind::Keyword(Keyword::While)));
+
+    preceded(while_kv, cut(expression.and(block)))
+        .map(|(condition, body)| While { condition, body })
         .parse(tokens)
 }
 

@@ -13,6 +13,7 @@ pub enum Keyword {
     Const,
     If,
     Else,
+    While,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -99,6 +100,7 @@ fn keyword(input: &str) -> nom::IResult<&str, Token> {
         tag("const").map(|_: &str| Keyword::Const),
         tag("if").map(|_: &str| Keyword::If),
         tag("else").map(|_: &str| Keyword::Else),
+        tag("while").map(|_: &str| Keyword::While),
     ))
     .map(|kv| Token {
         kind: TokenKind::Keyword(kv),

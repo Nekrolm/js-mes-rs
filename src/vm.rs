@@ -6,7 +6,9 @@ use std::{
 use anyhow::Context;
 
 use crate::{
-    ast::{program, If, Statement, VariableAssignment, VariableDeclaration, VariableModifier},
+    ast::{
+        program, If, Statement, VariableAssignment, VariableDeclaration, VariableModifier, While,
+    },
     expression::{
         BinaryExpression, BinaryOperation, Expression, Identifier, LiteralExpression,
         UnaryExpression, UnaryOperation,
@@ -92,6 +94,7 @@ fn execute_statement<'a>(st: &Statement<'a>, state: &mut Scope<'a>) -> anyhow::R
         Statement::VarDecl(var_decl) => execute_var_decl(var_decl, state),
         Statement::Assignment(var_assign) => execute_var_assign(var_assign, state),
         Statement::If(if_st) => execute_if_statement(if_st, state),
+        Statement::While(while_st) => execute_while_statement(while_st, state),
     }
 }
 
@@ -297,6 +300,19 @@ fn execute_if_statement<'a>(st: &If<'a>, state: &mut Scope<'a>) -> anyhow::Resul
     execute_block(branch, state)
 }
 
+fn execute_while_statement<'a>(st: &While<'a>, state: &mut Scope<'a>) -> anyhow::Result<()> {
+    loop {
+        let Value::Bool(condition) = evaluate_expression(&st.condition, state)? else {
+            anyhow::bail!("If condition expression must produce the boolean value")
+        };
+
+        if !condition {
+            break Ok(());
+        }
+        execute_block(&st.body, state)?;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,6 +328,22 @@ mod tests {
            res = 80.0;
         } else {
            res = y;
+        }
+    "#;
+        let vm = VirtualMachine::new(code).expect("valid programm");
+        let scope = vm.exec().expect("vaid code");
+        dbg!(scope);
+    }
+
+    #[test]
+    fn test_exec_while() {
+        let code = r#"
+        const element = "a";
+        var result = "";
+        var iter = 0;
+        while iter < 5 {
+            result = result + element;
+            iter = iter + 1;
         }
     "#;
         let vm = VirtualMachine::new(code).expect("valid programm");
