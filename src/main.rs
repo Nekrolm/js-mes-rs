@@ -1,7 +1,7 @@
-mod lexer;
 mod ast;
-mod parser;
 mod expression;
+mod lexer;
+mod parser;
 mod vm;
 
 fn main() {

@@ -16,5 +16,3 @@ pub fn take_one_matches(
 {
     move |tokens| take_one_match_map(tokens, |&tok| pred(&tok).then_some(tok))
 }
-
-

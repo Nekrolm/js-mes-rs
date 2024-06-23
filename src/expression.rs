@@ -30,7 +30,6 @@ pub enum Expression<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Identifier<'a>(&'a str);
 
-
 #[derive(Debug, Clone, Copy)]
 pub enum LiteralExpression<'a> {
     StringLiteral(&'a str),
@@ -51,6 +50,7 @@ pub enum BinaryOperation {
     Multiple,
     Divide,
     Equals,
+    NotEquals,
     Less,
     Greater,
     LessOrEq,
@@ -80,6 +80,7 @@ impl BinaryOperation {
             Self::Multiple => 4,
             Self::Divide => 4,
             Self::Equals => 2,
+            Self::NotEquals => 2,
             Self::Less => 2,
             Self::Greater => 2,
             Self::LessOrEq => 2,
@@ -185,6 +186,7 @@ fn binary_operation<'tokens, 'a>(
         TokenKind::SpecialSymbol(SpecialSymbol::Greater) => Some(BinaryOperation::Greater),
         TokenKind::SpecialSymbol(SpecialSymbol::LessOrEq) => Some(BinaryOperation::LessOrEq),
         TokenKind::SpecialSymbol(SpecialSymbol::GreaterOrEq) => Some(BinaryOperation::GreaterOrEq),
+        TokenKind::SpecialSymbol(SpecialSymbol::NotEquals) => Some(BinaryOperation::NotEquals),
         // Logical
         TokenKind::SpecialSymbol(SpecialSymbol::LogicalAnd) => Some(BinaryOperation::LogicalAnd),
         TokenKind::SpecialSymbol(SpecialSymbol::LogicalOr) => Some(BinaryOperation::LogicalOr),

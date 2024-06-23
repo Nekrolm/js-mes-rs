@@ -55,7 +55,7 @@ fn statement<'tokens, 'a>(
     alt((
         variable_declaration.map(Statement::VarDecl),
         variable_assignment.map(Statement::Assignment),
-        if_statement.map(Statement::If)
+        if_statement.map(Statement::If),
     ))
     .parse(tokens)
 }
@@ -154,7 +154,7 @@ pub fn program<'tokens, 'a: 'tokens>(
 ) -> nom::IResult<&'tokens [Token<'a>], Vec<Statement<'a>>> {
     let start_semicolons = many0_count(semicolon);
     let end_semicolons = many0_count(semicolon);
-    
+
     let statement_with_trailings = delimited(start_semicolons, statement, end_semicolons);
     many0(statement_with_trailings).parse(tokens)
 }
@@ -176,7 +176,6 @@ mod tests {
         dbg!(program);
     }
 
-
     #[test]
     fn test_parse_if() {
         let code = "if (a + b) { c = 5; } else { c = 10; };";
@@ -188,7 +187,6 @@ mod tests {
 
         dbg!(program);
     }
-
 
     #[test]
     fn test_parse_if_opt_els() {

@@ -31,6 +31,7 @@ pub enum SpecialSymbol {
     Equals,
     Greater,
     Less,
+    NotEquals,
     GreaterOrEq,
     LessOrEq,
     LogicalAnd,
@@ -171,6 +172,7 @@ fn special_symbol(input: &str) -> nom::IResult<&str, Token> {
         tag("<=").map(|_| SpecialSymbol::LessOrEq),
         tag("&&").map(|_| SpecialSymbol::LogicalAnd),
         tag("||").map(|_| SpecialSymbol::LogicalOr),
+        tag("!=").map(|_| SpecialSymbol::NotEquals),
         single_special_symbol,
     ))
     .map(|symbol| Token {
@@ -191,12 +193,32 @@ fn integer(input: &str) -> nom::IResult<&str, Token> {
 }
 
 fn number(input: &str) -> nom::IResult<&str, Token> {
-    let double = nom::number::complete::double.map(|val| Token {
+    let mut double = nom::number::complete::double.map(|val| Token {
         kind: TokenKind::Literal,
         value: TokenValue::Number(NumberValue::Double(val)),
     });
 
-    alt((integer, double)).parse(input)
+    let as_int = integer(input);
+    let as_double = double.parse(input);
+
+    let Ok((after_int, int_val)) = as_int else {
+        // if int parsing failed -- parse as double and don't care
+        return as_double;
+    };
+
+    let Ok((after_double, double_val)) = as_double else {
+        // double parsing failed, but integer succeed... well,
+        // return integer
+        return Ok((after_int, int_val));
+    };
+
+    // both succeeded -- take one that parsed further
+    Ok(if after_double.len() < after_int.len() {
+        // double advanced further
+        (after_double, double_val)
+    } else {
+        (after_int, int_val)
+    })
 }
 
 fn string_payload(input: &str) -> nom::IResult<&str, &str> {
